@@ -5,6 +5,7 @@ mod config;
 mod error;
 
 use config::Config;
+use discord_bot::models::NewBalance;
 use error::ConfigError;
 use dotenvy::dotenv;
 use diesel::{
@@ -120,10 +121,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 		    Event::Message { new_message } => {
 			println!("Author: {}, Content: {}", new_message.author.name, new_message.content);
                         let mut db = get_db_pool().get().expect("Couldn't get db connection from pool");
+
+			let points: &f32 = new_message.content.chars().count() as i32 * 0.06;
+			let user_id: &str = new_message.author.id;
+			let new_balance = NewBalance { user_id, points };
+
+			diesel::insert_into(schema::balance::table)
+			    .values(&new_balance)
+			    .execute(&mut db)
+			    .expect("Error saving new post");
+			()
 		    },
 
 		    _ => (),
-		}
+		};
                 Ok(())
             })
         },
