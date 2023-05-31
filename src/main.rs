@@ -1,120 +1,155 @@
+#![warn(clippy::str_to_string)]
+
 mod commands;
+mod config;
+mod error;
 
-extern crate config;
+use config::Config;
+use error::ConfigError;
+use dotenvy::dotenv;
+use diesel::{
+    mysql::MysqlConnection,
+    prelude::*,
+    r2d2::ConnectionManager,
+    r2d2::Pool,
+};
+use poise::serenity_prelude as serenity;
+use poise::serenity_prelude::async_trait;
+use poise::event::Event;
+use tracing::info;
+use std::{fs::File, io::BufReader, env, collections::HashMap, env::var, sync::Mutex, time::Duration};
 
-use std::env;
-use std::collections::HashMap;
+pub struct Data {
+    config: Config,
+    dbPool: DbPool,
+    votes: Mutex<HashMap<String, u32>>,
+    points: u32
+}
+type Error = Box<dyn std::error::Error + Send + Sync>;
+type Context<'a> = poise::Context<'a, Data, Error>;
 
-use serde_json::{Number, Value};
-use serenity::async_trait;
-use serenity::model::application::command::Command;
-use serenity::model::application::interaction::{Interaction, InteractionResponseType};
-use serenity::model::gateway::Ready;
-use serenity::model::id::GuildId;
-use serenity::prelude::*;
-use std::{fs::File, io::BufReader};
+const CONFIG_PATH: &str = "./config.json";
 
-struct Handler;
-struct ConfigContainer;
-impl TypeMapKey for ConfigContainer {
-  type Value = Value;
+pub type DbPool = Pool<ConnectionManager<MysqlConnection>>;
+
+pub fn get_db_pool() -> DbPool {
+
+    let database_url =
+        env::var("DATABASE_URL").expect("Missing the DATABASE_URL environment variable");
+
+    info!("Connecting to database {}...", database_url);
+    let manager = ConnectionManager::<MysqlConnection>::new(database_url);
+
+    let pool = Pool::builder()
+        .build(manager)
+        .expect("Failed to create database connection pool.");
+
+    let mut db = pool.get().expect("Couldn't get db connection from pool");
+    pool
+}
+#[poise::command(slash_command, prefix_command)]
+async fn age(
+    ctx: Context<'_>,
+    #[description = "Selected user"] user: Option<serenity::User>,
+) -> Result<(), Error> {
+    let u = user.as_ref().unwrap_or_else(|| ctx.author());
+    let response = format!("{}'s account was created at {}", u.name, u.created_at());
+    ctx.say(response).await?;
+    Ok(())
 }
 
-const CONFIG_PATH: &str = "../config.json";
+fn init_config() -> Result<Config, ConfigError> {
+    let file = File::open(CONFIG_PATH)?;
+    let reader = BufReader::new(file);
+    let config: Config = serde_json::from_reader(reader)?;
+    Ok(config)
+}
 
-#[async_trait]
-impl EventHandler for Handler {
-    async fn interaction_create(&self, ctx: Context, interaction: Interaction) {
-        if let Interaction::ApplicationCommand(command) = interaction {
-            println!("Received command interaction: {:#?}", command);
-
-            let content = match command.data.name.as_str() {
-                "ping" => commands::ping::run(&command.data.options),
-                "id" => commands::id::run(&command.data.options),
-                "attachmentinput" => commands::attachmentinput::run(&command.data.options),
-                _ => "not implemented :(".to_string(),
-            };
-
-            if let Err(why) = command
-                .create_interaction_response(&ctx.http, |response| {
-                    response
-                        .kind(InteractionResponseType::ChannelMessageWithSource)
-                        .interaction_response_data(|message| message.content(content))
-                })
-                .await
-            {
-                println!("Cannot respond to slash command: {}", why);
+async fn on_error(error: poise::FrameworkError<'_, Data, Error>) {
+    // This is our custom error handler
+    // They are many errors that can occur, so we only handle the ones we want to customize
+    // and forward the rest to the default handler
+    match error {
+        poise::FrameworkError::Setup { error, .. } => panic!("Failed to start bot: {:?}", error),
+        poise::FrameworkError::Command { error, ctx } => {
+            println!("Error in command `{}`: {:?}", ctx.command().name, error,);
+        }
+        error => {
+            if let Err(e) = poise::builtins::on_error(error).await {
+                println!("Error while handling error: {}", e)
             }
         }
-    }
-
-    async fn ready(&self, ctx: Context, ready: Ready) {
-        println!("{} is connected!", ready.user.name);
-
-        let guild_id = GuildId(
-            env::var("GUILD_ID")
-                .expect("Expected GUILD_ID in environment")
-                .parse()
-                .expect("GUILD_ID must be an integer"),
-        );
-
-        let commands = GuildId::set_application_commands(&guild_id, &ctx.http, |commands| {
-            commands
-                .create_application_command(|command| commands::ping::register(command))
-                .create_application_command(|command| commands::id::register(command))
-                .create_application_command(|command| commands::welcome::register(command))
-                .create_application_command(|command| commands::numberinput::register(command))
-                .create_application_command(|command| commands::attachmentinput::register(command))
-        })
-        .await;
-
-        println!("I now have the following guild slash commands: {:#?}", commands);
-
-        let guild_command = Command::create_global_application_command(&ctx.http, |command| {
-            commands::wonderful_command::register(command)
-        })
-        .await;
-
-        println!("I created the following global slash command: {:#?}", guild_command);
     }
 }
 
 #[tokio::main]
-async fn main() {
-    let config: Value = {
-        let file_result = File::open(CONFIG_PATH);
-	let file = match file_result {
-            Ok(file) => file,
-            Err(error) => panic!("Problem opening the config file: {:?}", error),
-	};
-        let reader = BufReader::new(file);
-        let json_result = serde_json::from_reader(reader);
-	let json = match json_result {
-            Ok(json) => json,
-            Err(error) => panic!("Problem deserializing the config file: {:?}", error),
-	};
-	json
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    dotenv().ok();
+    let config = init_config()?;
+    let options = poise::FrameworkOptions {
+        commands: vec![commands::help(), commands::vote(), commands::getvotes()],
+        /// The global error handler for all error cases that may occur
+        on_error: |error| Box::pin(on_error(error)),
+        /// This code is run before every command
+        pre_command: |ctx| {
+            Box::pin(async move {
+                println!("Executing command {}...", ctx.command().qualified_name);
+            })
+        },
+        /// This code is run after a command if it was successful (returned Ok)
+        post_command: |ctx| {
+            Box::pin(async move {
+                println!("Executed command {}!", ctx.command().qualified_name);
+            })
+        },
+        command_check: Some(|ctx| {
+            Box::pin(async move {
+                if ctx.author().id == ctx.data().config.bot.userId{
+		    println!("Bot");
+                    return Ok(false);
+                }
+		println!("Not bot");
+                Ok(true)
+            })
+        }),
+        /// Enforce command checks even for owners (enforced by default)
+        /// Set to true to bypass checks, which is useful for testing
+        event_handler: |_ctx, event, _framework, _data| {
+            Box::pin(async move {
+		match event {
+		    Event::Message { new_message } => {
+			println!("Author: {}, Content: {}", new_message.author.name, new_message.content);
+                        let mut db = get_db_pool().get().expect("Couldn't get db connection from pool");
+		    },
+
+		    _ => (),
+		}
+                Ok(())
+            })
+        },
+        ..Default::default()
     };
-    // Configure the client with your Discord bot token in the environment.
-    let token = &config["bot"]["token"];
 
-    println!("{}", token);
-    // Build our client.
-  //   let mut client = Client::builder(&token, GatewayIntents::empty())
-  // 	.event_handler(Handler)
-  // 	.await
-  // 	.expect("Err creating client");
-  // {
-  //   let mut data = client.data.write().await;
-
-  //   data.insert::<ConfigContainer>(config);
-  // }
-
-    // Finally, start a single shard, and start listening to events.
-    //
-    // Shards will automatically attempt to reconnect, and will perform
-    // exponential backoff until it reconnects.
-    // if let Err(why) = client.start().await {
-    //     println!("Client error: {:?}", why);
-    // }
+    poise::Framework::builder()
+        .token(&config.bot.token)
+        .setup(move |ctx, _ready, framework| {
+            Box::pin(async move {
+                println!("Logged in as {}", _ready.user.name);
+                poise::builtins::register_globally(ctx, &framework.options().commands).await?;
+                Ok(Data {
+		    config: config,
+		    dbPool: get_db_pool(),
+                    votes: Mutex::new(HashMap::new()),
+		    points: 0
+                })
+            })
+        })
+        .options(options)
+        .intents(
+            serenity::GatewayIntents::non_privileged() | serenity::GatewayIntents::MESSAGE_CONTENT,
+        )
+        .run()
+        .await
+        .unwrap();
+    Ok(())
 }

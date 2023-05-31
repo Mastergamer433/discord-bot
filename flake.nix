@@ -30,6 +30,9 @@
           inherit pkgs;
           defaultCrateOverrides = pkgs.defaultCrateOverrides // {
             # Crate dependency overrides go here
+            "discord-bot" = oldAttrs: {
+              buildInputs = with pkgs; [ pkgs.mariadb pkgs.libmysqlclient ];
+            };
           };
         };
 
@@ -40,7 +43,7 @@
 
         devShell = pkgs.mkShell {
           inputsFrom = builtins.attrValues self.packages.${system};
-          buildInputs = [ pkgs.cargo pkgs.rust-analyzer pkgs.clippy ];
+          buildInputs = [ pkgs.cargo pkgs.rust-analyzer pkgs.clippy pkgs.diesel-cli ];
         };
       });
 }
