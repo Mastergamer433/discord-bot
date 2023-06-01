@@ -6,7 +6,7 @@ mod error;
 mod schema;
 
 use config::Config;
-use discord_bot::models::NewBalance;
+use discord_bot::models::{NewBalance, Balance};
 use error::ConfigError;
 use dotenvy::dotenv;
 use diesel::{
@@ -126,12 +126,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 			let points: &f32 = &(new_message.content.chars().count() as f32 * 0.06);
 			let user_id: u64 = *new_message.author.id.as_u64();
 			let user_id: &str = &user_id.to_string();
-			let new_balance = NewBalance { user_id, points };
+			use diesel::select;
+			use diesel::dsl::exists;
 
-			diesel::insert_into(schema::balance::table)
-			    .values(&new_balance)
-			    .execute(&mut db)
-			    .expect("Error saving new post");
+			let balance = select(exists(schema::balance::dsl::balance.filter(schema::balance::dsl::user_id.eq(user_id))))
+			    .get_result(&mut db)
+    .expect("Error checking if balance exist");
+
+			if balance {
+			    diesel::update(schema::balance::dsl::balance.filter(schema::balance::dsl::user_id.eq(user_id)))
+				.set(schema::balance::points.eq(points))
+				.execute(&mut db)
+				.unwrap();
+			} else {
+			    diesel::insert_into(schema::balance::dsl::balance)
+				.values((schema::balance::dsl::user_id.eq(user_id), schema::balance::dsl::points.eq(points)))
+				.execute(&mut db)
+				.expect("Error saving new post");
+			}
 			()
 		    },
 
