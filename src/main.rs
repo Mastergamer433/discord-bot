@@ -3,6 +3,7 @@
 mod commands;
 mod config;
 mod error;
+mod schema;
 
 use config::Config;
 use discord_bot::models::NewBalance;
@@ -122,8 +123,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 			println!("Author: {}, Content: {}", new_message.author.name, new_message.content);
                         let mut db = get_db_pool().get().expect("Couldn't get db connection from pool");
 
-			let points: &f32 = new_message.content.chars().count() as i32 * 0.06;
-			let user_id: &str = new_message.author.id;
+			let points: &f32 = &(new_message.content.chars().count() as f32 * 0.06);
+			let user_id: u64 = *new_message.author.id.as_u64();
+			let user_id: &str = &user_id.to_string();
 			let new_balance = NewBalance { user_id, points };
 
 			diesel::insert_into(schema::balance::table)
