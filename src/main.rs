@@ -4,9 +4,10 @@ mod commands;
 mod config;
 mod error;
 mod schema;
+mod models;
 
 use config::Config;
-use discord_bot::models::{NewBalance, Balance};
+use models::{NewBalance, Balance};
 use error::ConfigError;
 use dotenvy::dotenv;
 use diesel::{
@@ -135,7 +136,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 			if balance {
 			    diesel::update(schema::balance::dsl::balance.filter(schema::balance::dsl::user_id.eq(user_id)))
-				.set(schema::balance::points.eq(points))
+				.set(schema::balance::points.eq(schema::balance::points+points))
 				.execute(&mut db)
 				.unwrap();
 			} else {
