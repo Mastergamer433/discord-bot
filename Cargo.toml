@@ -16,3 +16,4 @@ serde = { version = "1.0.163", features = ["derive"] }
 serde_json = "1.0.59"
 diesel = { version = "2.0.0", features = ["mysql", "r2d2"] }
 dotenvy = "0.15"
+anyhow = "1"

@@ -1,13 +1,20 @@
 #![warn(clippy::str_to_string)]
 
 mod commands;
+mod events;
 mod config;
 mod error;
 mod schema;
 mod models;
+mod structs;
 
 use config::Config;
 use models::{NewBalance, Balance};
+use structs::{
+    DbPool,
+    Context,
+    Data,
+};
 use error::ConfigError;
 use dotenvy::dotenv;
 use diesel::{
@@ -18,22 +25,10 @@ use diesel::{
 };
 use poise::serenity_prelude as serenity;
 use poise::serenity_prelude::async_trait;
-use poise::event::Event;
-use tracing::info;
+use tracing::{info, error};
 use std::{fs::File, io::BufReader, env, collections::HashMap, env::var, sync::Mutex, time::Duration};
 
-pub struct Data {
-    config: Config,
-    dbPool: DbPool,
-    votes: Mutex<HashMap<String, u32>>,
-    points: u32
-}
-type Error = Box<dyn std::error::Error + Send + Sync>;
-type Context<'a> = poise::Context<'a, Data, Error>;
-
 const CONFIG_PATH: &str = "./config.json";
-
-pub type DbPool = Pool<ConnectionManager<MysqlConnection>>;
 
 pub fn get_db_pool() -> DbPool {
 
@@ -50,16 +45,6 @@ pub fn get_db_pool() -> DbPool {
     let mut db = pool.get().expect("Couldn't get db connection from pool");
     pool
 }
-#[poise::command(slash_command, prefix_command)]
-async fn age(
-    ctx: Context<'_>,
-    #[description = "Selected user"] user: Option<serenity::User>,
-) -> Result<(), Error> {
-    let u = user.as_ref().unwrap_or_else(|| ctx.author());
-    let response = format!("{}'s account was created at {}", u.name, u.created_at());
-    ctx.say(response).await?;
-    Ok(())
-}
 
 fn init_config() -> Result<Config, ConfigError> {
     let file = File::open(CONFIG_PATH)?;
@@ -68,31 +53,27 @@ fn init_config() -> Result<Config, ConfigError> {
     Ok(config)
 }
 
-async fn on_error(error: poise::FrameworkError<'_, Data, Error>) {
-    // This is our custom error handler
-    // They are many errors that can occur, so we only handle the ones we want to customize
-    // and forward the rest to the default handler
-    match error {
-        poise::FrameworkError::Setup { error, .. } => panic!("Failed to start bot: {:?}", error),
-        poise::FrameworkError::Command { error, ctx } => {
-            println!("Error in command `{}`: {:?}", ctx.command().name, error,);
-        }
-        error => {
-            if let Err(e) = poise::builtins::on_error(error).await {
-                println!("Error while handling error: {}", e)
-            }
-        }
-    }
-}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv().ok();
     let config = init_config()?;
     let options = poise::FrameworkOptions {
-        commands: vec![commands::help(), commands::vote(), commands::getvotes()],
+        commands: commands::commands(),
         /// The global error handler for all error cases that may occur
-        on_error: |error| Box::pin(on_error(error)),
+        on_error: |error| Box::pin(async move {
+	    match error {
+		poise::FrameworkError::Setup { error, .. } => panic!("Failed to start bot: {:?}", error),
+		poise::FrameworkError::Command { error, ctx } => {
+		    println!("Error in command `{}`: {:?}", ctx.command().name, error,);
+		}
+		error => {
+		    if let Err(e) = poise::builtins::on_error(error).await {
+			println!("Error while handling error: {}", e)
+		    }
+		}
+	    }
+	}),
         /// This code is run before every command
         pre_command: |ctx| {
             Box::pin(async move {
@@ -117,42 +98,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }),
         /// Enforce command checks even for owners (enforced by default)
         /// Set to true to bypass checks, which is useful for testing
-        event_handler: |_ctx, event, _framework, _data| {
-            Box::pin(async move {
-		match event {
-		    Event::Message { new_message } => {
-			println!("Author: {}, Content: {}", new_message.author.name, new_message.content);
-                        let mut db = get_db_pool().get().expect("Couldn't get db connection from pool");
-
-			let points: &f32 = &(new_message.content.chars().count() as f32 * 0.06);
-			let user_id: u64 = *new_message.author.id.as_u64();
-			let user_id: &str = &user_id.to_string();
-			use diesel::select;
-			use diesel::dsl::exists;
-
-			let balance = select(exists(schema::balance::dsl::balance.filter(schema::balance::dsl::user_id.eq(user_id))))
-			    .get_result(&mut db)
-    .expect("Error checking if balance exist");
-
-			if balance {
-			    diesel::update(schema::balance::dsl::balance.filter(schema::balance::dsl::user_id.eq(user_id)))
-				.set(schema::balance::points.eq(schema::balance::points+points))
-				.execute(&mut db)
-				.unwrap();
-			} else {
-			    diesel::insert_into(schema::balance::dsl::balance)
-				.values((schema::balance::dsl::user_id.eq(user_id), schema::balance::dsl::points.eq(points)))
-				.execute(&mut db)
-				.expect("Error saving new post");
-			}
-			()
-		    },
-
-		    _ => (),
-		};
-                Ok(())
-            })
-        },
+        event_handler: |_ctx, event, _framework, _data| Box::pin(events::handler(_ctx, event, _framework, _data)),
         ..Default::default()
     };
 
@@ -164,7 +110,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 poise::builtins::register_globally(ctx, &framework.options().commands).await?;
                 Ok(Data {
 		    config: config,
-		    dbPool: get_db_pool(),
+		    db_pool: get_db_pool(),
                     votes: Mutex::new(HashMap::new()),
 		    points: 0
                 })
