@@ -17,6 +17,11 @@ pub struct Data {
     pub points: u32
 }
 
+pub enum TransferError {
+    NoBalance,
+    NotEnoughPoints,
+}
+
 pub type DbPool = Pool<ConnectionManager<MysqlConnection>>;
 pub type CommandResult<E=Error> = Result<(), E>;
 pub type CommandError = Error;

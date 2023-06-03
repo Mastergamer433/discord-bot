@@ -7,6 +7,7 @@ mod error;
 mod schema;
 mod models;
 mod structs;
+mod helpers;
 
 use config::Config;
 use models::{NewBalance, Balance};
