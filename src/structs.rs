@@ -22,6 +22,11 @@ pub enum TransferError {
     NotEnoughPoints,
 }
 
+pub enum Permission {
+    Admin = 2,
+    SettingsGuild = 1,
+}
+
 pub type DbPool = Pool<ConnectionManager<MysqlConnection>>;
 pub type CommandResult<E=Error> = Result<(), E>;
 pub type CommandError = Error;

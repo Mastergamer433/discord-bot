@@ -3,12 +3,9 @@ mod vote;
 mod help;
 mod main;
 mod points;
+mod manage;
 
 use crate::structs::Command;
-use getvotes::*;
-use vote::*;
-use help::*;
-use points::*;
 
 pub fn commands() -> Vec<Command> {
     main::commands().into_iter()
@@ -16,5 +13,6 @@ pub fn commands() -> Vec<Command> {
 	.chain(vote::commands())
 	.chain(help::commands())
 	.chain(points::commands())
+	.chain(manage::commands())
 	.collect()
 }
