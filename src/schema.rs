@@ -9,6 +9,16 @@ diesel::table! {
 }
 
 diesel::table! {
+    options (id) {
+        id -> Integer,
+        guild_id -> Varchar,
+        user_id -> Varchar,
+        option -> Varchar,
+        value -> Varchar,
+    }
+}
+
+diesel::table! {
     permissions (id) {
         id -> Integer,
         guild_id -> Varchar,
@@ -19,5 +29,6 @@ diesel::table! {
 
 diesel::allow_tables_to_appear_in_same_query!(
     balance,
+    options,
     permissions,
 );

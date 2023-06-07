@@ -1,6 +1,7 @@
 use diesel::prelude::*;
 use crate::schema::balance;
 use crate::schema::permissions;
+use crate::schema::options;
 
 #[derive(Queryable, Selectable)]
 #[diesel(table_name = balance)]
@@ -24,4 +25,14 @@ pub struct Permissions {
     pub user_id: String,
     pub guild_id: String,
     pub permission_string: String,
+}
+
+#[derive(Queryable, Selectable)]
+#[diesel(table_name = options)]
+pub struct Options {
+    pub id: i32,
+    pub user_id: String,
+    pub guild_id: String,
+    pub option: String,
+    pub value: String,
 }

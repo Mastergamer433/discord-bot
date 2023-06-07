@@ -4,6 +4,7 @@ mod help;
 mod main;
 mod points;
 mod manage;
+mod options;
 
 use crate::structs::Command;
 
@@ -14,5 +15,6 @@ pub fn commands() -> Vec<Command> {
 	.chain(help::commands())
 	.chain(points::commands())
 	.chain(manage::commands())
+	.chain(options::commands())
 	.collect()
 }
