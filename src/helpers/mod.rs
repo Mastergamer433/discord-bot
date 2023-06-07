@@ -1,6 +1,6 @@
-mod get_options;
-mod check_permissions;
-mod transfer;
+pub mod get_options;
+pub mod check_permissions;
+pub mod transfer;
 
 use crate::{
     schema,

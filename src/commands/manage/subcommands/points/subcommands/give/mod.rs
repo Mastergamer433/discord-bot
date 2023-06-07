@@ -4,7 +4,7 @@ use crate::{
     structs::{
 	CommandResult,
 	Context,
-    }, helpers::check_permission,
+    }, helpers::check_permissions::*,
 };
 
 use anyhow::anyhow;
