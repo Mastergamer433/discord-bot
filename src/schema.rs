@@ -27,8 +27,18 @@ diesel::table! {
     }
 }
 
+diesel::table! {
+    status (id) {
+        id -> Integer,
+        guild_id -> Varchar,
+        user_id -> Varchar,
+        since_online -> Timestamp,
+    }
+}
+
 diesel::allow_tables_to_appear_in_same_query!(
     balance,
     options,
     permissions,
+    status,
 );

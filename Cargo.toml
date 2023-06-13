@@ -18,3 +18,4 @@ diesel = { version = "2.0.0", features = ["mysql", "r2d2"] }
 dotenvy = "0.15"
 anyhow = "1"
 lettre = "0.10"
+cronjob = "0.4.17"

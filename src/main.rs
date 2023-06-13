@@ -119,7 +119,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
         .options(options)
         .intents(
-            serenity::GatewayIntents::non_privileged() | serenity::GatewayIntents::MESSAGE_CONTENT,
+            serenity::GatewayIntents::non_privileged() | serenity::GatewayIntents::MESSAGE_CONTENT | serenity::GatewayIntents::GUILD_PRESENCES,
         )
         .run()
         .await
